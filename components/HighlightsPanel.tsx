@@ -3,7 +3,6 @@
 import { Highlight } from "@/lib/types";
 import { formatTimestamp } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 type HighlightsPanelProps = {
@@ -22,39 +21,41 @@ export default function HighlightsPanel({
   error,
 }: HighlightsPanelProps) {
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0">
-        <CardTitle>Highlights</CardTitle>
-        <Button size="sm" onClick={onGenerate} disabled={loading}>
-          {loading ? "Generating..." : "Generate Highlights"}
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-medium text-white">Key Moments</h3>
+        <Button
+          size="sm"
+          onClick={onGenerate}
+          disabled={loading}
+          variant="outline"
+          className="h-7 border-[#1e1e2e] bg-transparent text-xs text-[#9898a8] hover:border-[#00d4aa40] hover:text-white"
+        >
+          {loading ? "Generating..." : "Generate"}
         </Button>
-      </CardHeader>
-      <CardContent className="h-[220px]">
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        {!loading && highlights.length === 0 && !error && (
-          <p className="text-sm text-muted-foreground">
-            Generate key moments to quickly review important parts.
-          </p>
-        )}
-        <ScrollArea className="h-full pr-2">
-          <div className="space-y-3">
-            {highlights.map((highlight) => (
-              <button
-                type="button"
-                key={highlight.id}
-                onClick={() => onJump(highlight.start)}
-                className="w-full rounded-md border p-3 text-left hover:bg-muted/40"
-              >
-                <p className="font-medium">{highlight.title}</p>
-                <p className="text-xs text-muted-foreground">
-                  {formatTimestamp(highlight.start)} - {formatTimestamp(highlight.end)}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">{highlight.summary}</p>
-              </button>
-            ))}
-          </div>
-        </ScrollArea>
-      </CardContent>
-    </Card>
+      </div>
+      {error && <p className="mb-2 text-sm text-red-400">{error}</p>}
+      {!loading && highlights.length === 0 && !error && (
+        <p className="text-xs text-[#52525e]">Generate key moments to quickly review important parts.</p>
+      )}
+      <ScrollArea className="flex-1 pr-1">
+        {highlights.map((highlight) => (
+          <button
+            type="button"
+            key={highlight.id}
+            onClick={() => onJump(highlight.start)}
+            className="hover-lift group mb-2 w-full cursor-pointer rounded-lg border border-[#1e1e2e] bg-[#111118] p-3 text-left transition-all hover:border-[#00d4aa40]"
+          >
+            <div className="mb-1 flex items-center gap-2">
+              <span className="font-mono text-xs text-[#00d4aa]">{formatTimestamp(highlight.start)}</span>
+              <span className="text-xs text-[#52525e]">→</span>
+              <span className="font-mono text-xs text-[#52525e]">{formatTimestamp(highlight.end)}</span>
+            </div>
+            <p className="mb-0.5 text-xs font-medium text-white">{highlight.title}</p>
+            <p className="text-xs leading-relaxed text-[#9898a8]">{highlight.summary}</p>
+          </button>
+        ))}
+      </ScrollArea>
+    </div>
   );
 }

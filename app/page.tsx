@@ -1,263 +1,185 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import ChatPanel from "@/components/ChatPanel";
-import HighlightsPanel from "@/components/HighlightsPanel";
-import NotesPanel from "@/components/NotesPanel";
-import ResultsList from "@/components/ResultsList";
-import SearchBar from "@/components/SearchBar";
-import VideoPlayer from "@/components/VideoPlayer";
-import { Button } from "@/components/ui/button";
-import { ChatMessage, Highlight, Note, SearchResult } from "@/lib/types";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { BookOpen, MessageSquare, Pin, Search, Share2 } from "lucide-react";
 
-type SessionData = {
-  indexId: string;
-  lectureTitle: string;
-  videoUrl: string;
-};
+const features = [
+  {
+    title: "Semantic Search",
+    description:
+      "Search your lecture by concept, not keyword. Jump to the exact moment that answers your question.",
+    icon: Search,
+  },
+  {
+    title: "Chat with the Lecture",
+    description:
+      "Ask follow-up questions like you're talking to a tutor. Get answers grounded in the lecture, not the internet.",
+    icon: MessageSquare,
+  },
+  {
+    title: "Timestamped Notes",
+    description:
+      "Capture insights tied to exact moments. Click any note to jump back to that point in the video.",
+    icon: Pin,
+  },
+  {
+    title: "Export to Notion",
+    description:
+      "Send your highlights, notes, and AI summary to a Notion page in one click.",
+    icon: Share2,
+  },
+];
 
 export default function HomePage() {
-  const [session, setSession] = useState<SessionData | null>(null);
-  const [currentTimestamp, setCurrentTimestamp] = useState(0);
-  const [seekToSeconds, setSeekToSeconds] = useState<number | null>(null);
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [highlights, setHighlights] = useState<Highlight[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [chatLoading, setChatLoading] = useState(false);
-  const [highlightsLoading, setHighlightsLoading] = useState(false);
-  const [notesLoading, setNotesLoading] = useState(false);
-  const [exportLoading, setExportLoading] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [chatError, setChatError] = useState<string | null>(null);
-  const [highlightsError, setHighlightsError] = useState<string | null>(null);
-  const [notesError, setNotesError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const router = useRouter();
+  const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    const raw = localStorage.getItem("summed-up-session");
-    if (!raw) {
-      return;
-    }
-    try {
-      const parsed = JSON.parse(raw) as SessionData;
-      if (parsed.indexId) {
-        setSession(parsed);
-      }
-    } catch {
-      localStorage.removeItem("summed-up-session");
-    }
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
-
-  useEffect(() => {
-    const loadNotes = async () => {
-      const response = await fetch("/api/notes");
-      const data = (await response.json()) as { notes: Note[] };
-      setNotes(data.notes || []);
-    };
-    loadNotes().catch(() => setNotes([]));
-  }, []);
-
-  const lectureTitle = useMemo(() => session?.lectureTitle || "No lecture loaded", [session]);
-
-  const searchLecture = async (query: string) => {
-    setSearchLoading(true);
-    setSearchError(null);
-    try {
-      if (!session?.indexId) {
-        throw new Error("No indexed lecture yet. Open Upload first.");
-      }
-      const response = await fetch("/api/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, indexId: session.indexId }),
-      });
-      const data = (await response.json()) as { error?: string; results?: SearchResult[] };
-      if (!response.ok) {
-        throw new Error(data.error || "Search failed.");
-      }
-      setSearchResults(data.results || []);
-    } catch (error) {
-      setSearchError(error instanceof Error ? error.message : "Search failed.");
-    } finally {
-      setSearchLoading(false);
-    }
-  };
-
-  const generateHighlights = async () => {
-    setHighlightsLoading(true);
-    setHighlightsError(null);
-    try {
-      if (!session?.indexId) {
-        throw new Error("No indexed lecture yet.");
-      }
-      const response = await fetch("/api/highlights", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ indexId: session.indexId }),
-      });
-      const data = (await response.json()) as { error?: string; highlights?: Highlight[] };
-      if (!response.ok) {
-        throw new Error(data.error || "Could not generate highlights.");
-      }
-      setHighlights(data.highlights || []);
-    } catch (error) {
-      setHighlightsError(error instanceof Error ? error.message : "Could not generate highlights.");
-    } finally {
-      setHighlightsLoading(false);
-    }
-  };
-
-  const askLecture = async (question: string) => {
-    setChatLoading(true);
-    setChatError(null);
-    const userMessage: ChatMessage = {
-      id: `u-${Date.now()}`,
-      role: "user",
-      content: question,
-    };
-    setChatMessages((prev) => [...prev, userMessage]);
-
-    try {
-      if (!session?.indexId) {
-        throw new Error("No indexed lecture yet.");
-      }
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question,
-          indexId: session.indexId,
-          history: chatMessages.map((m) => ({ role: m.role, content: m.content })),
-        }),
-      });
-      const data = (await response.json()) as {
-        error?: string;
-        answer?: string;
-        references?: Array<{ label: string; timestamp: number }>;
-      };
-      if (!response.ok || !data.answer) {
-        throw new Error(data.error || "Chat failed.");
-      }
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          id: `a-${Date.now()}`,
-          role: "assistant",
-          content: data.answer || "No answer received.",
-          references: data.references || [],
-        },
-      ]);
-    } catch (error) {
-      setChatError(error instanceof Error ? error.message : "Chat failed.");
-    } finally {
-      setChatLoading(false);
-    }
-  };
-
-  const addTimestampNote = async (text: string) => {
-    setNotesLoading(true);
-    setNotesError(null);
-    try {
-      const response = await fetch("/api/notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ timestamp: currentTimestamp, text }),
-      });
-      const data = (await response.json()) as { error?: string; notes?: Note[] };
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to save note.");
-      }
-      setNotes(data.notes || []);
-    } catch (error) {
-      setNotesError(error instanceof Error ? error.message : "Failed to save note.");
-    } finally {
-      setNotesLoading(false);
-    }
-  };
-
-  const exportToNotion = async () => {
-    setExportLoading(true);
-    setToast(null);
-    try {
-      const response = await fetch("/api/notion", { method: "POST" });
-      const data = (await response.json()) as { error?: string; url?: string; mocked?: boolean };
-      if (!response.ok) {
-        throw new Error(data.error || "Export failed.");
-      }
-      const mode = data.mocked ? "mock mode" : "live mode";
-      setToast(`Notion export complete (${mode}). ${data.url ?? ""}`);
-    } catch (error) {
-      setToast(error instanceof Error ? error.message : "Export failed.");
-    } finally {
-      setExportLoading(false);
-    }
-  };
 
   return (
-    <main className="min-h-screen space-y-4 p-4">
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-bold">Summed Up</h1>
-          <p className="text-sm text-muted-foreground">{lectureTitle}</p>
+    <main className="bg-[#d8dde0] text-[#f0f0f5]">
+      <section
+        className="px-5 pb-8 pt-5 sm:px-8 sm:pb-10"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 1px 1px, rgba(18, 29, 42, 0.12) 1px, transparent 0)",
+          backgroundSize: "22px 22px",
+        }}
+      >
+        <div className="mx-auto max-w-[1240px] overflow-hidden rounded-[30px] bg-[#0a1118] shadow-[0_30px_80px_rgba(0,0,0,0.28)]">
+          <nav
+            className={`mx-auto flex h-16 max-w-6xl items-center justify-between px-6 transition-all ${scrolled ? "opacity-95" : "opacity-100"}`}
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-6 w-6 items-center justify-center rounded-md border border-white/20 bg-white/10">
+                <BookOpen className="h-3.5 w-3.5 text-white" />
+              </div>
+              <span className="text-sm font-medium text-white">Nexora</span>
+            </div>
+            <div className="flex items-center gap-6 text-sm text-[#c2c9d3]">
+              <a href="#how-it-works" className="transition-colors hover:text-white">
+                Solutions
+              </a>
+              <a href="#how-it-works" className="transition-colors hover:text-white">
+                Industries
+              </a>
+              <a href="#how-it-works" className="transition-colors hover:text-white">
+                Pricing
+              </a>
+              <a href="#how-it-works" className="transition-colors hover:text-white">
+                About
+              </a>
+            </div>
+          </nav>
+
+          <div className="relative isolate min-h-[620px] px-6 pb-14 pt-14 sm:pt-20">
+            <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_50%_34%,rgba(108,255,224,0.26),transparent_42%),radial-gradient(circle_at_50%_95%,rgba(100,250,232,0.30),transparent_52%)]" />
+            <div className="relative z-10 mx-auto max-w-3xl text-center">
+              <p className="mb-5 text-xs uppercase tracking-[0.14em] text-[#d0d8df]">
+                AI-Powered Business Solutions
+              </p>
+              <h1 className="font-serif text-[48px] font-normal leading-[1.08] text-[#edf2f6] sm:text-[64px]">
+                Automate and scale
+                <br />
+                your business with AI
+              </h1>
+              <div className="mt-10 flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => router.push("/workspace")}
+                  className="rounded-full bg-white px-7 py-2.5 text-sm font-medium text-[#0c1721] transition hover:opacity-95"
+                >
+                  Start Now
+                </button>
+                <Link
+                  href="/upload"
+                  className="rounded-full border border-white/30 bg-white/10 px-7 py-2.5 text-sm font-medium text-white transition hover:bg-white/16"
+                >
+                  Book a Demo
+                </Link>
+              </div>
+              <div className="mx-auto mt-8 h-10 w-px bg-gradient-to-b from-white/80 via-white/35 to-transparent" />
+            </div>
+
+            <div className="pointer-events-none absolute -bottom-44 left-1/2 -z-10 h-[420px] w-[980px] -translate-x-1/2 rounded-[100%] bg-white/40 blur-[80px]" />
+          </div>
         </div>
-        <Link href="/upload">
-          <Button>Upload / Link Lecture</Button>
-        </Link>
-      </header>
+      </section>
 
-      {toast && <p className="rounded-md border px-3 py-2 text-sm text-muted-foreground">{toast}</p>}
+      <section id="how-it-works" className="mx-auto max-w-6xl px-6 py-24 text-white">
+        <p className="text-center text-xs uppercase tracking-[0.15em] text-[#00d4aa]">Capabilities</p>
+        <h2 className="mt-3 text-center font-serif text-4xl font-light leading-tight text-white md:text-5xl">
+          Everything you need
+          <br />
+          to master a lecture
+        </h2>
+        <div className="mt-12 grid gap-6 md:grid-cols-2">
+          {features.map((feature) => {
+            const Icon = feature.icon;
+            return (
+              <div
+                key={feature.title}
+                className="group hover-lift rounded-2xl border border-[#1e1e2e] bg-[#16161f] p-6 transition-all duration-300 hover:border-[#00d4aa40]"
+              >
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg border border-[#00d4aa30] bg-[#00d4aa1a]">
+                  <Icon className="h-4 w-4 text-[#00d4aa]" />
+                </div>
+                <h3 className="mb-2 text-lg font-medium text-white">{feature.title}</h3>
+                <p className="text-sm leading-relaxed text-[#9898a8]">{feature.description}</p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <section className="space-y-4 xl:col-span-5">
-          <VideoPlayer
-            videoUrl={session?.videoUrl || ""}
-            onProgress={setCurrentTimestamp}
-            seekToSeconds={seekToSeconds}
-            onSeekHandled={() => setSeekToSeconds(null)}
-          />
-          <HighlightsPanel
-            highlights={highlights}
-            onGenerate={generateHighlights}
-            onJump={setSeekToSeconds}
-            loading={highlightsLoading}
-            error={highlightsError}
-          />
-        </section>
+      <section className="border-y border-[#1e1e2e] bg-[#111118] py-10">
+        <div className="mx-auto grid max-w-6xl gap-8 px-6 md:grid-cols-3">
+          <div className="text-center md:border-r md:border-[#1e1e2e]">
+            <p className="text-lg font-medium text-white">+2,000 lectures indexed</p>
+            <p className="mt-1 text-xs text-[#52525e]">Growing across students and teams</p>
+          </div>
+          <div className="text-center md:border-r md:border-[#1e1e2e]">
+            <p className="text-lg font-medium text-white">Powered by Twelve Labs + OpenAI</p>
+            <p className="mt-1 text-xs text-[#52525e]">Grounded multimodal AI understanding</p>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-medium text-white">Works with YouTube & uploads</p>
+            <p className="mt-1 text-xs text-[#52525e]">Flexible input for any lecture workflow</p>
+          </div>
+        </div>
+      </section>
 
-        <section className="space-y-4 xl:col-span-4">
-          <SearchBar onSearch={searchLecture} loading={searchLoading} />
-          <ResultsList
-            results={searchResults}
-            onJump={setSeekToSeconds}
-            loading={searchLoading}
-            error={searchError}
-          />
-        </section>
+      <section className="relative px-6 py-24 text-center">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="h-[420px] w-[420px] rounded-full bg-[#00d4aa] opacity-[0.06] blur-[120px]" />
+        </div>
+        <div className="relative mx-auto max-w-2xl">
+          <h2 className="font-serif text-4xl font-light text-white">Ready to learn smarter?</h2>
+          <p className="mt-4 text-base text-[#9898a8]">
+            Drop in a YouTube link and start exploring in seconds.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/workspace")}
+            className="mt-8 rounded-xl bg-[#00d4aa] px-8 py-4 text-sm font-semibold text-black transition hover:opacity-90"
+          >
+            Try it now →
+          </button>
+        </div>
+      </section>
 
-        <section className="xl:col-span-3">
-          <ChatPanel
-            messages={chatMessages}
-            onAsk={askLecture}
-            onJump={setSeekToSeconds}
-            loading={chatLoading}
-            error={chatError}
-          />
-        </section>
-      </div>
-
-      <NotesPanel
-        currentTimestamp={currentTimestamp}
-        notes={notes}
-        onAddNote={addTimestampNote}
-        onJump={setSeekToSeconds}
-        loading={notesLoading}
-        error={notesError}
-        onExportNotion={exportToNotion}
-        exportLoading={exportLoading}
-      />
+      <footer className="border-t border-[#1e1e2e]">
+        <div className="mx-auto flex max-w-6xl flex-col justify-between gap-2 px-6 py-6 text-xs text-[#52525e] md:flex-row">
+          <p>© 2025 LectureAI</p>
+          <p>Built with Twelve Labs · OpenAI · Notion</p>
+        </div>
+      </footer>
     </main>
   );
 }
